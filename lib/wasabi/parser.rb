@@ -234,21 +234,31 @@ module Wasabi
         base = inherits.attribute('base').value.match(/\w+$/).to_s
 
         if @types[base]
-          # Reverse merge because we don't want subclass attributes to be overriden by base class
-          @types[name] = types[base].merge(types[name])
-          @types[name][:order!] = @types[base][:order!] | @types[name][:order!]
-          @types[name][:base_type] = base
+          merge_base_type(name, base)
         else
           p = Proc.new do
             if @types[base]
-              # Reverse merge because we don't want subclass attributes to be overriden by base class
-              @types[name] = @types[base].merge(@types[name])
-              @types[name][:order!] = @types[base][:order!] | @types[name][:order!]
-              @types[name][:base_type] = base
+              merge_base_type(name, base)
             end
           end
           deferred_types << p
         end
+      end
+    end
+
+    def merge_base_type(name, base)
+      # Reverse merge because we don't want subclass attributes to be overriden by base class
+      @types[name] = @types[base].merge(@types[name])
+      @types[name][:order!] = @types[base][:order!] | @types[name][:order!]
+      @types[name][:base_type] = base
+
+      # Update types depending on the merged type
+      @types.each do |type_name, type|
+        next unless type[:base_type] == name
+
+        @types[type_name] = @types[type_name].merge(@types[name])
+        @types[type_name][:order!] = @types[name][:order!] | @types[type_name][:order!]
+        @types[type_name][:base_type] = name
       end
     end
 
