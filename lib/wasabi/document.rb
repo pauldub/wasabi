@@ -159,7 +159,7 @@ module Wasabi
 
     # Parses the WSDL document and returns <tt>Wasabi::Parser</tt>.
     def parse
-      parser = Parser.new Nokogiri::XML(xml)
+      parser = Parser.new(Nokogiri::XML(xml), request, adapter)
       parser.parse
       parser
     end

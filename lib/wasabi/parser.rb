@@ -16,7 +16,7 @@ module Wasabi
     SOAP_1_1 = 'http://schemas.xmlsoap.org/wsdl/soap/'
     SOAP_1_2 = 'http://schemas.xmlsoap.org/wsdl/soap12/'
 
-    def initialize(document)
+    def initialize(document, request, adapter)
       self.document = document
       self.operations = {}
       self.namespaces = {}
@@ -24,6 +24,9 @@ module Wasabi
       self.types = {}
       self.deferred_types = []
       self.element_form_default = :unqualified
+      self.request = request
+      self.adapter = adapter
+      self.imported_namespaces = {}
     end
 
     # Returns the Nokogiri document.
@@ -52,6 +55,14 @@ module Wasabi
 
     # Returns the elementFormDefault value.
     attr_accessor :element_form_default
+
+    # Returns the base request used when resolving remote imports
+    attr_accessor :request
+    # Returns the HTTPI adapter used for making requests.
+    attr_accessor :adapter
+
+    # Returns a hash of imported namespaces
+    attr_accessor :imported_namespaces
 
     def parse
       parse_namespaces
@@ -167,14 +178,31 @@ module Wasabi
         schema.element_children.each do |node|
           namespace = schema_namespace || @namespace
 
-          case node.name
-          when 'element'
-            complex_type = node.at_xpath('./xs:complexType', 'xs' => XSD)
-            process_type namespace, complex_type, node['name'].to_s if complex_type
-          when 'complexType'
-            process_type namespace, node, node['name'].to_s
-          end
+          parse_type(namespace,node)
         end
+      end
+    end
+
+    def parse_type(namespace, node)
+      case node.name
+      when 'element'
+        complex_type = node.at_xpath('./xs:complexType', 'xs' => XSD)
+        process_type namespace, complex_type, node['name'].to_s if complex_type
+      when 'complexType'
+        process_type namespace, node, node['name'].to_s
+      when 'import'
+        return if imported_namespaces.has_key?(node.attributes['schemaLocation'].value)
+
+        # Recursively resolve imported xsd schema
+        schema_xml = Resolver.new(
+          node.attributes['schemaLocation'].value, request, adapter
+        ).resolve
+        schema_document = Nokogiri::XML(schema_xml)
+        import_schema = schema_document.element_children.first
+        import_schema.element_children.each do |child_node|
+          parse_type(node.attributes['namespace'].value, child_node)
+        end
+        imported_namespaces[node.attributes['schemaLocation'].value] = true
       end
     end
 
